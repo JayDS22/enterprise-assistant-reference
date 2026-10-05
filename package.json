@@ -9,6 +9,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "e2e": "TEST_LIVE=1 playwright test",
     "eval": "tsx packages/evals/runner.ts",
     "seed": "tsx packages/db/seed/seed.ts",
     "k6": "k6 run scripts/k6_latency.js"
