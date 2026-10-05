@@ -1,0 +1,22 @@
+# Single-region per FINAL plan §1. Known cold-start caveat lives in README,
+# not here.
+app = "enterprise-assistant-reference"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"

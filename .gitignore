@@ -1,0 +1,14 @@
+node_modules/
+.next/
+dist/
+build/
+.env
+.env.local
+.otel/
+*.log
+.DS_Store
+coverage/
+.vitest/
+test-results/
+playwright-report/
+.fly/

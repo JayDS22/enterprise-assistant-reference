@@ -1,0 +1,39 @@
+{
+  "name": "enterprise-assistant-reference",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agents SDK + Responses API + Next.js reference. See _handoff/project-1-FINAL-plan.md.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "eval": "tsx packages/evals/runner.ts",
+    "seed": "tsx packages/db/seed/seed.ts",
+    "k6": "k6 run scripts/k6_latency.js"
+  },
+  "dependencies": {
+    "@openai/agents": "^0.1.0",
+    "jose": "^5.9.6",
+    "next": "15.0.0",
+    "openai": "^4.73.0",
+    "pg": "^8.13.1",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^19.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
