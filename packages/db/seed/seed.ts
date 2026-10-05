@@ -85,7 +85,7 @@ const rand = mulberry32(0xC0FFEE);
 function pickBucket<T extends string>(buckets: Array<[T, number]>): T {
   const r = rand();
   for (const [v, p] of buckets) if (r <= p) return v;
-  return buckets[buckets.length - 1][0];
+  return buckets[buckets.length - 1]![0];
 }
 
 function randInt(lo: number, hi: number): number {
@@ -315,10 +315,10 @@ async function writeDocs(): Promise<Array<{ tenant: TenantId; id: string; slug: 
     // Fill the rest with department-scoped variants.
     let v = 0;
     while (out.filter((o) => o.tenant === t.id).length < target) {
-      const dept = departments[v % departments.length];
-      const typ = docTypes[v % docTypes.length];
+      const dept = departments[v % departments.length]!;
+      const typ = docTypes[v % docTypes.length]!;
       const slug = `${dept}_${typ}_v${Math.floor(v / docTypes.length) + 1}`;
-      const title = `${dept[0].toUpperCase()}${dept.slice(1)} ${typ.replace("_", " ")} v${Math.floor(v / docTypes.length) + 1}`;
+      const title = `${dept[0]!.toUpperCase()}${dept.slice(1)} ${typ.replace("_", " ")} v${Math.floor(v / docTypes.length) + 1}`;
       const spec = synthDoc(slug, title, typ, dept);
       const body = renderDoc(spec, t);
       const filename = `${t.id}_${slug}.md`;
@@ -406,14 +406,14 @@ function* generateCustomers(): Generator<{ tenant_id: TenantId; id: string; name
   const lastNames = ["Patel","Garcia","Nguyen","Smith","Kim","Johnson","Lopez","Williams","Brown","Davis","Chen","Martinez","Walker","Hall","Young","King","Wright","Scott","Green","Baker"];
   for (const t of TENANTS) {
     for (let i = 1; i <= t.customers; i++) {
-      const fn = firstNames[Math.floor(rand() * firstNames.length)];
-      const ln = lastNames[Math.floor(rand() * lastNames.length)];
+      const fn = firstNames[Math.floor(rand() * firstNames.length)]!;
+      const ln = lastNames[Math.floor(rand() * lastNames.length)]!;
       const id = `cust-${t.id}-${String(i).padStart(5, "0")}`;
       yield {
         tenant_id: t.id,
         id,
         name: `${fn} ${ln}`,
-        email: `${fn.toLowerCase()}.${ln.toLowerCase()}.${i}@${t.name.split(" ")[0].toLowerCase()}.example`,
+        email: `${fn.toLowerCase()}.${ln.toLowerCase()}.${i}@${t.name.split(" ")[0]!.toLowerCase()}.example`,
       };
     }
   }
@@ -425,7 +425,7 @@ function* generateTickets(customerCounts: Record<TenantId, number>): Generator<{
   let allocated = 0;
   let seq = 0;
   for (let ti = 0; ti < TENANTS.length; ti++) {
-    const t = TENANTS[ti];
+    const t = TENANTS[ti]!;
     const count = ti === TENANTS.length - 1
       ? TICKETS_TOTAL - allocated
       : Math.round((t.customers / totalCust) * TICKETS_TOTAL);
@@ -433,7 +433,7 @@ function* generateTickets(customerCounts: Record<TenantId, number>): Generator<{
     for (let i = 0; i < count; i++) {
       const custIdx = randInt(1, t.customers);
       const custId = `cust-${t.id}-${String(custIdx).padStart(5, "0")}`;
-      const category = TICKET_CATEGORIES[Math.floor(rand() * TICKET_CATEGORIES.length)];
+      const category = TICKET_CATEGORIES[Math.floor(rand() * TICKET_CATEGORIES.length)]!;
       yield {
         tenant_id: t.id,
         id: `tkt-${t.id}-${String(++seq).padStart(6, "0")}`,
@@ -466,7 +466,7 @@ function ticketTitle(category: string): string {
     documentation: ["Example in webhook docs references wrong field", "Rate-limit page says 60/min but headers show 100/min", "Missing docs for new audit log endpoint"],
   };
   const arr = templates[category] ?? ["Issue reported"];
-  return arr[Math.floor(rand() * arr.length)];
+  return arr[Math.floor(rand() * arr.length)]!;
 }
 
 function* generateSubscriptions(): Generator<{ tenant_id: TenantId; id: string; customer_id: string; plan: string; status: string; renews_on: string | null }> {
@@ -474,7 +474,7 @@ function* generateSubscriptions(): Generator<{ tenant_id: TenantId; id: string; 
   let seq = 0;
   let allocated = 0;
   for (let ti = 0; ti < TENANTS.length; ti++) {
-    const t = TENANTS[ti];
+    const t = TENANTS[ti]!;
     const count = ti === TENANTS.length - 1
       ? SUBS_TOTAL - allocated
       : Math.round((t.customers / totalCust) * SUBS_TOTAL);
