@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "preserve",
@@ -15,13 +19,37 @@
     "incremental": true,
     "allowJs": false,
     "paths": {
-      "@/*": ["./app/*"],
-      "@/db/*": ["./packages/db/*"],
-      "@/schemas/*": ["./packages/schemas/*"],
-      "@/evals/*": ["./packages/evals/*"]
+      "@/*": [
+        "./app/*"
+      ],
+      "@/db/*": [
+        "./packages/db/*"
+      ],
+      "@/schemas/*": [
+        "./packages/schemas/*"
+      ],
+      "@/evals/*": [
+        "./packages/evals/*"
+      ]
     },
-    "plugins": [{ "name": "next" }]
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "noEmit": true
   },
-  "include": ["app", "src", "packages", "scripts", "next-env.d.ts"],
-  "exclude": ["node_modules", ".next", "dist"]
+  "include": [
+    "app",
+    "next-env.d.ts",
+    "packages",
+    "scripts",
+    "src",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next",
+    "dist"
+  ]
 }
