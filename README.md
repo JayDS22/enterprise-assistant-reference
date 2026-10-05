@@ -24,6 +24,8 @@ Not written yet. See `_handoff/project-1-FINAL-plan.md` §7 for the day-by-day d
 - **This is a reference impl, not a product.** 500 docs, 10k customers, single region. Scaling notes in `docs/ARCHITECTURE.md`.
 - **LLM-judge calibrated on 20-row gold sets per judged scenario.** Statistically directional, not definitive. See `docs/EVALS.md`.
 - **Zod validates request shapes; SQL safety comes from `pg` parameterized queries, not from Zod.** Confusing the two is a common eval-literacy fail; we call it out explicitly.
+- **Latency methodology:** `scripts/k6_latency.js` is the source of the k6 numbers — steady-state p95 after a 3-request warm-up, not cold-start.
+- **Observability shape:** `src/otel/dashboard.json` is importable into any Grafana 10+; a rendered screenshot (not a live login) is what reviewers see.
 
 ## Tenant isolation
 

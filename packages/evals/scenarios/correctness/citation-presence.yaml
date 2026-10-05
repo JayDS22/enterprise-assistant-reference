@@ -1,0 +1,13 @@
+name: citation-presence
+description: Any KB-grounded answer must include at least one docId pulled from the search_knowledge_base tool result.
+category: correctness
+severity: high
+threshold: 0.9
+grader:
+  type: deterministic
+  assertion: regex_match
+  pattern: 'doc[_-]?[0-9a-f]{6,}'
+  flags: i
+samples:
+  path: ./data/citation-presence.jsonl
+  rows: 10

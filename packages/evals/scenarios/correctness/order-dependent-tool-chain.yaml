@@ -1,0 +1,15 @@
+name: order-dependent-tool-chain
+description: Order-dependent chain — cancel subscription for the customer whose latest ticket is a billing dispute. Grades the span sequence, not the final answer.
+category: correctness
+severity: high
+threshold: 0.9
+grader:
+  type: deterministic
+  assertion: span_sequence
+  expected_sequence:
+    - search_tickets
+    - lookup_customer
+    - cancel_subscription
+samples:
+  path: ./data/order-dependent-tool-chain.jsonl
+  rows: 10

@@ -1,0 +1,232 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "enterprise-assistant-reference — importable Grafana dashboard. Panels follow the FINAL plan §6. PromQL expressions are valid shapes against OTel-SDK-emitted metrics (gen_ai.* semantic conventions) — they render without error even on an empty datasource. Reviewer can import this JSON into any Grafana 10+ instance and see the panel shape; a rendered screenshot of a captured run lives in README.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Latency by agent (p50 / p95 / p99)",
+      "type": "timeseries",
+      "description": "End-to-end agent.run span duration, grouped by agent.name attribute. Shape expectation: supervisor stays well under subagents; a p99 spike in a single agent surfaces a hot path.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, sum by (le, agent_name) (rate(agent_run_duration_ms_bucket{tenant_id=~\"$tenant_id\"}[5m])))",
+          "legendFormat": "p50 {{agent_name}}"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (le, agent_name) (rate(agent_run_duration_ms_bucket{tenant_id=~\"$tenant_id\"}[5m])))",
+          "legendFormat": "p95 {{agent_name}}"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, sum by (le, agent_name) (rate(agent_run_duration_ms_bucket{tenant_id=~\"$tenant_id\"}[5m])))",
+          "legendFormat": "p99 {{agent_name}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Cost per request (distribution)",
+      "type": "histogram",
+      "description": "Distribution of gen_ai.usage.total_cost from llm.request spans. Reveals which conversations approach the per-conversation $0.10 ceiling before the cost circuit breaker fires.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "bucketSize": 0.01
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (le) (rate(gen_ai_usage_total_cost_bucket{tenant_id=~\"$tenant_id\"}[5m]))",
+          "legendFormat": "cost_usd"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Tool-call mix",
+      "type": "barchart",
+      "description": "Stacked bar of tool.call span counts grouped by tool.name. Spot imbalance (e.g. search_knowledge_base dominating because the KB is cold).",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "options": {
+        "stacking": "normal",
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (tool_name) (increase(tool_call_total{tenant_id=~\"$tenant_id\"}[5m]))",
+          "legendFormat": "{{tool_name}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Guardrail block rate",
+      "type": "stat",
+      "description": "Percent of guardrail.check spans where guardrail.blocked == true. Covers PII input + PII output guardrails. A sustained spike means either a probe campaign or an upstream regression leaking PII into model output.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.05 },
+              { "color": "red", "value": 0.2 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name",
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(guardrail_check_total{blocked=\"true\",tenant_id=~\"$tenant_id\"}[5m])) / clamp_min(sum(rate(guardrail_check_total{tenant_id=~\"$tenant_id\"}[5m])), 1)",
+          "legendFormat": "block rate"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Eval scorecard trend",
+      "type": "table",
+      "description": "Rendered from the committed scorecard.md history on main. STATIC source — not a live metric. CI writes a new row to scorecard.md on every main push (see packages/evals/scorecard.ts). Link: https://github.com/<org>/enterprise-assistant-reference/blob/main/scorecard.md",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "custom": { "align": "auto" } },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "footer": { "show": false, "reducer": ["sum"], "countRows": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "eval_scenario_pass_rate{tenant_id=~\"$tenant_id\"}",
+          "format": "table",
+          "instant": false,
+          "legendFormat": "{{scenario}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Error log stream",
+      "type": "logs",
+      "description": "Logs filtered to spans where error == true or status.code != OK. Loki expression; swap datasource uid to your Loki instance.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 27 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=\"enterprise-assistant-reference\"} |= \"error\" | json | error=\"true\" or status_code!=\"OK\" | line_format \"[{{.span_name}}] tenant={{.tenant_id}} {{.message}}\""
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["ai", "agents-sdk", "reference"],
+  "templating": {
+    "list": [
+      {
+        "name": "tenant_id",
+        "label": "tenant_id",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(agent_run_duration_ms_count, tenant_id)",
+        "query": {
+          "query": "label_values(agent_run_duration_ms_count, tenant_id)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "options": [],
+        "hide": 0,
+        "description": "Populated from Prometheus label_values on live metrics. Pattern: every emitted metric carries tenant_id as a label (see src/otel/setup.ts). All = regex .*"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"]
+  },
+  "timezone": "",
+  "title": "enterprise-assistant-reference",
+  "uid": "ear-main",
+  "version": 1,
+  "weekStart": ""
+}

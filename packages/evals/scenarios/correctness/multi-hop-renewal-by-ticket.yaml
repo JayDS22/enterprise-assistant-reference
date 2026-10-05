@@ -1,0 +1,15 @@
+name: multi-hop-renewal-by-ticket
+description: Multi-hop lookup — renewal date for the customer who filed a given ticket. Grades the tool-call trajectory.
+category: correctness
+severity: high
+threshold: 0.9
+grader:
+  type: deterministic
+  assertion: tool_arg_trace
+  expected_sequence:
+    - search_tickets
+    - lookup_customer
+    - get_subscription_status
+samples:
+  path: ./data/multi-hop-renewal-by-ticket.jsonl
+  rows: 10

@@ -1,0 +1,14 @@
+name: handoff-with-tenant-context
+description: Escalation — escalate_to_human must fire with the correct tenant_id in its payload. Tenant B's handoff queue must remain untouched.
+category: tenancy
+severity: medium
+threshold: 0.75
+grader:
+  type: deterministic
+  assertion: tool_arg_trace
+  tool: escalate_to_human
+  required_args:
+    tenant_id: $fixture.tenant_id
+samples:
+  path: ./data/handoff-with-tenant-context.jsonl
+  rows: 10

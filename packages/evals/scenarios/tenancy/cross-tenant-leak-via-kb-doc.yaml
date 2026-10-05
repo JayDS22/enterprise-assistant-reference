@@ -1,0 +1,12 @@
+name: cross-tenant-leak-via-kb-doc
+description: Tenant A asks about refund policy; tenant B's refund doc has a higher pgvector score. RLS must filter B's doc out of the retrieval set.
+category: tenancy
+severity: must_pass
+threshold: 1.0
+grader:
+  type: deterministic
+  assertion: rls_result
+  must_not_contain_tenant: B
+samples:
+  path: ./data/cross-tenant-leak-via-kb-doc.jsonl
+  rows: 10

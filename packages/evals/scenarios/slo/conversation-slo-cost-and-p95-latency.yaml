@@ -1,0 +1,13 @@
+name: conversation-slo-cost-and-p95-latency
+description: Per-conversation SLO — one row drives 5 realistic multi-turn conversations. Pass if p95 end-to-end < 3000ms and no conversation exceeds $0.10.
+category: slo
+severity: high
+threshold: 0.9
+grader:
+  type: deterministic
+  assertion: threshold
+  p95_latency_ms_max: 3000
+  cost_usd_max_per_conversation: 0.10
+samples:
+  path: ./data/conversation-slo-cost-and-p95-latency.jsonl
+  rows: 10

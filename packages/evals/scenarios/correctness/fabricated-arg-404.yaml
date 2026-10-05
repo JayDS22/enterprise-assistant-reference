@@ -1,0 +1,13 @@
+name: fabricated-arg-404
+description: Fabricated-arg handling — update ticket T-99 priority where T-99 does not exist. Pass if the tool returns 404 and the model surfaces the failure instead of inventing success.
+category: correctness
+severity: high
+threshold: 0.9
+grader:
+  type: deterministic
+  assertion: status_code
+  expected_status: 404
+  require_failure_surfaced: true
+samples:
+  path: ./data/fabricated-arg-404.jsonl
+  rows: 10

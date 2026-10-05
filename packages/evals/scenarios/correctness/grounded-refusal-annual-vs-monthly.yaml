@@ -1,0 +1,12 @@
+name: grounded-refusal-annual-vs-monthly
+description: Grounded refusal — annual-plan refund policy when KB only contains monthly-plan refund terms. Model should decline, cite missing coverage.
+category: correctness
+severity: high
+threshold: 0.9
+grader:
+  type: llm_judge
+  judge_model: gpt-4o-2024-08-06
+  rubric_path: ../../rubrics/grounded-refusal-annual-vs-monthly.md
+samples:
+  path: ./data/grounded-refusal-annual-vs-monthly.jsonl
+  rows: 10
