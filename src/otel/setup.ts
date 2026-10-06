@@ -32,16 +32,29 @@ let _fileExporter: FileSpanExporter | null = null;
  * on shutdown or when the stream drains.
  */
 export class FileSpanExporter implements TracingExporter {
-  readonly #stream: WriteStream;
+  readonly #stream: WriteStream | null;
   readonly filePath: string;
 
   constructor(filePath: string) {
     this.filePath = resolve(filePath);
-    mkdirSync(dirname(this.filePath), { recursive: true });
-    this.#stream = createWriteStream(this.filePath, { flags: "a" });
+    // Fail-soft on mkdir: in a read-only container (/app owned by root,
+    // process runs as nextjs) the default .otel path throws EACCES. Catch
+    // and leave the stream null; export() becomes a no-op. The console
+    // exporter still runs so traces aren't lost.
+    try {
+      mkdirSync(dirname(this.filePath), { recursive: true });
+      this.#stream = createWriteStream(this.filePath, { flags: "a" });
+    } catch (err) {
+      console.warn(
+        `[otel] file exporter disabled: ${(err as Error).message}. ` +
+          `Console exporter still active. Set OTEL_FILE_EXPORTER_PATH to a writable dir to re-enable.`,
+      );
+      this.#stream = null;
+    }
   }
 
   async export(items: TraceOrSpan[], _signal?: AbortSignal): Promise<void> {
+    if (!this.#stream) return; // mkdir failed; console exporter carries the load
     const lines: string[] = [];
     for (const item of items) {
       if (item.type !== "trace.span") continue; // skip Trace envelopes; we only emit spans
@@ -49,15 +62,18 @@ export class FileSpanExporter implements TracingExporter {
     }
     if (lines.length === 0) return;
     const payload = lines.join("\n") + "\n";
-    const ok = this.#stream.write(payload);
+    const stream = this.#stream;
+    const ok = stream.write(payload);
     if (!ok) {
-      await new Promise<void>((res) => this.#stream.once("drain", () => res()));
+      await new Promise<void>((res) => stream.once("drain", () => res()));
     }
   }
 
   async shutdown(): Promise<void> {
+    if (!this.#stream) return;
+    const stream = this.#stream;
     await new Promise<void>((res, rej) => {
-      this.#stream.end((err?: Error | null) => (err ? rej(err) : res()));
+      stream.end((err?: Error | null) => (err ? rej(err) : res()));
     });
   }
 }
