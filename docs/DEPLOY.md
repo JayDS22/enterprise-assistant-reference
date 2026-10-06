@@ -37,17 +37,20 @@ psql "<neon-connection-string>" <<'SQL'
 CREATE EXTENSION IF NOT EXISTS vector;
 SQL
 
-# Apply schema + RLS (uses the superuser).
+# Apply schema (uses the superuser).
 export DATABASE_URL_ADMIN="postgres://user:pass@ep-xxx.neon.tech/neondb?sslmode=require"
 psql "$DATABASE_URL_ADMIN" -f packages/db/schema.sql
-psql "$DATABASE_URL_ADMIN" -f packages/db/rls.sql
 
-# Seed (uses the superuser — bypass is fine for admin ops).
+# Apply RLS. rls.sql takes the app role password as a psql variable so the
+# plaintext stays out of source control AND managed Postgres (Neon, RDS) can
+# enforce their password policies without the migration failing on a weak
+# default. See INCIDENTS.md #4 for the catch.
+APP_PW="$(openssl rand -base64 32 | tr -d '/+=\n')Aa1!X"
+psql "$DATABASE_URL_ADMIN" -v app_password="'$APP_PW'" -f packages/db/rls.sql
+echo "$APP_PW" > .env.neon-prod.key && chmod 600 .env.neon-prod.key
+
+# Seed (uses the superuser — RLS bypass is fine for admin ops).
 DATABASE_URL="$DATABASE_URL_ADMIN" pnpm seed
-
-# The app role (ear_app) was created by rls.sql with a default password of
-# `ear_app`. Rotate it before using in production:
-psql "$DATABASE_URL_ADMIN" -c "ALTER ROLE ear_app PASSWORD '<strong-random>';"
 ```
 
 The app's `DATABASE_URL` points at `ear_app`:

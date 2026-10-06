@@ -4,6 +4,7 @@
 export const metadata = {
   title: "Enterprise Assistant Reference",
   description: "Reference impl for Agents SDK + Responses API. Not a product.",
+  icons: { icon: "/favicon.svg" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

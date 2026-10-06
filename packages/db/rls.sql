@@ -40,12 +40,18 @@ CREATE POLICY tenant_isolation ON cost_rollup_daily
 
 -- Non-superuser application role. The app's DATABASE_URL MUST point at this
 -- role, not the DB owner. Superusers and table owners bypass RLS even with
--- FORCE ROW LEVEL SECURITY; see INCIDENTS.md #6 for the catch. The admin DB
+-- FORCE ROW LEVEL SECURITY; see INCIDENTS.md #4 for the catch. The admin DB
 -- role (that ran these migrations) retains ownership and can run future DDL.
+--
+-- Password is passed via psql variable `-v app_password='<strong-random>'`.
+-- Neon and other managed Postgres rejects weak passwords; passing it inline
+-- also keeps the plaintext out of source control. If :'app_password' is
+-- unset, psql errors with "unterminated quoted string" which is a fail-loud
+-- signal rather than a silently-created role with no password.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ear_app') THEN
-    CREATE ROLE ear_app LOGIN PASSWORD 'ear_app' NOINHERIT NOBYPASSRLS;
+    EXECUTE format('CREATE ROLE ear_app LOGIN PASSWORD %L NOINHERIT NOBYPASSRLS', :'app_password');
   END IF;
 END $$;
 

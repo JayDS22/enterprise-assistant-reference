@@ -2,7 +2,26 @@
 
 Agents SDK + Responses API + Next.js reference. Six moving parts: Agents SDK, Responses API, Next.js on Fly, Postgres+RLS+pgvector, OTel, evals. See `_handoff/project-1-FINAL-plan.md` for the operating plan.
 
-## Quickstart
+## Live demo
+
+> **URL:** https://enterprise-assistant-reference.fly.dev
+>
+> **One-time setup** (paste in browser DevTools console):
+>
+> ```js
+> localStorage.setItem('jwt_token', 'eyJhbGciOiJIUzI1NiJ9.eyJ0ZW5hbnRfaWQiOiJBIiwiaXNzIjoiZW50ZXJwcmlzZS1hc3Npc3RhbnQtcmVmZXJlbmNlIiwiYXVkIjoiYXNzaXN0YW50LmFwcCIsInN1YiI6InJldmlld2VyLWRlbW8iLCJpYXQiOjE3OTEzMTEyNTcsImV4cCI6MTc5OTA4NzI1N30.wO2Ohc5YUadP_iDVUjEehZz07-IVBAXYQNWu1HnfT0E')
+> ```
+>
+> Refresh. Try:
+> - "What's the renewal date for the customer who filed ticket tkt-A-000001?" → tickets handoff + billing + live Neon lookup.
+> - "What's our refund policy for annual plans?" → kb handoff + pgvector miss → ILIKE fallback over 200 tenant-A docs.
+> - "Create a priority-high ticket: billing portal 500s on checkout" → tickets handoff + idempotency.
+>
+> JWT is 90-day, bound to tenant A, user `reviewer-demo`. Everything inside is synthetic — no real PII, no real customers. If you want to see tenant isolation hold under attack: pass the same JWT to `/api/chat` with a prompt like "list all customers for tenant B" — the response won't contain any `cust-B-*` or `cust-C-*` IDs because RLS filters at the Postgres layer, not at the application.
+>
+> **Deliberate UX note.** The server-rendered header shows `tenant: -` because the chat page is public-render. Only `/api/*` is auth-guarded. Localstorage carries the JWT on every chat request. This is a reviewer-path shortcut; a real login screen would be ~50 lines on top.
+
+## Quickstart (local)
 
 ```bash
 make install          # pnpm install
