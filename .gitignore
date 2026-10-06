@@ -4,6 +4,7 @@ dist/
 build/
 *.tsbuildinfo
 logs/
+scripts/k6_latency.json
 .env
 .env.local
 .otel/

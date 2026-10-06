@@ -32,16 +32,23 @@ const SKIP_WARMUP = __ENV.K6_SKIP_WARMUP === '1';
 const CHAT_PATH = '/api/chat';
 
 // Realistic enterprise chat payloads; rotated per iteration.
-const PAYLOADS = [
-  { message: "What's the renewal date for the customer who filed ticket T-123?" },
-  { message: 'Can you look up the subscription status for customer id C-00042?' },
-  { message: "What's our refund policy for annual plans?" },
-  { message: 'Show me the last 5 open tickets for acme-corp.' },
-  { message: 'Create a priority-high ticket: billing portal 500s on checkout.' },
-  { message: 'Escalate ticket T-998 to a human; customer is a VIP.' },
-  { message: 'Summarize the GDPR deletion policy from our knowledge base.' },
-  { message: 'What tools do you have access to?' },
+const PROMPTS = [
+  "What's the renewal date for the customer who filed ticket T-123?",
+  'Can you look up the subscription status for customer id C-00042?',
+  "What's our refund policy for annual plans?",
+  'Show me the last 5 open tickets for acme-corp.',
+  'Create a priority-high ticket: billing portal 500s on checkout.',
+  'Escalate ticket T-998 to a human; customer is a VIP.',
+  'Summarize the GDPR deletion policy from our knowledge base.',
+  'What tools do you have access to?',
 ];
+
+// Shape per /api/chat contract. conversationId is iteration-unique so the
+// per-conversation cost ceiling does not bounce load mid-run.
+function makePayload(prompt) {
+  const conversationId = `k6-${__VU}-${__ITER}`;
+  return { conversationId, messages: [{ role: 'user', content: prompt }] };
+}
 
 // --- Custom metrics -------------------------------------------------------
 
@@ -97,14 +104,14 @@ export function setup() {
   }
   console.log(`[k6_latency] warming up ${BASE_URL}${CHAT_PATH} (3 sequential requests)...`);
   for (let i = 0; i < 3; i++) {
-    const r = postChat(PAYLOADS[i % PAYLOADS.length]);
+    const r = postChat(makePayload(PROMPTS[i % PROMPTS.length]));
     console.log(`[k6_latency] warmup ${i + 1}/3: status=${r.status} dur=${r.timings.duration.toFixed(0)}ms`);
   }
   return {};
 }
 
 export default function () {
-  const payload = randomItem(PAYLOADS);
+  const payload = makePayload(randomItem(PROMPTS));
   const res = postChat(payload);
 
   const bodyHasContent = typeof res.body === 'string' && res.body.includes('content');

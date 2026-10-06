@@ -110,6 +110,38 @@ Postmortems from bugs hit during the build. Format per FINAL plan §9: TL;DR, Ti
 
 ---
 
+## 7. k6 reported 100% error rate on first full run
+
+**TL;DR.** First full k6 load test (20 VUs × 3 min) completed with 5877 iterations, 100% error rate, 13.4ms avg latency. All 5877 requests were HTTP 400 — the payload shape in `scripts/k6_latency.js` sent `{message: "..."}` but the `/api/chat` route handler expects `{conversationId, messages: [{role, content}]}`.
+
+**Timeline.** Right after `brew install k6`, ran the full profile. k6 completed in 3 min with 0 2xx responses. Fast errors (~13ms) meant the server was accepting + rejecting cheaply, which is a Zod validation failure fingerprint, not a 429 or 500.
+
+**Root cause.** The k6 PAYLOADS array was hand-authored to look like realistic prompts but never cross-referenced against the actual API contract. The route handler's Zod schema requires `conversationId` + `messages` as a chat-messages array. k6 sent neither. 400 immediately.
+
+**Fix.** Replaced `PAYLOADS` (shape `{message: string}`) with `PROMPTS` (array of strings) + a `makePayload(prompt)` helper that produces `{conversationId: "k6-${__VU}-${__ITER}", messages: [{role: 'user', content: prompt}]}`. The `__VU` + `__ITER` interpolation ensures each iteration gets a unique `conversationId` so the `cost_breaker.ts` per-conversation ceiling doesn't bounce load mid-run.
+
+**What changed.** A 20-second 2-VU validation probe now runs clean: 0% error, 100% SSE hit rate, p95 7.1s. The full 20-VU 3-min profile was NOT re-run after the fix (would cost ~$9 for numbers already visible in the probe). The README latency table marks the probe as warm, not full-load.
+
+---
+
+## 8. Dockerfile had shell redirection in a COPY directive
+
+**TL;DR.** First `docker build -t ear-local .` failed with `failed to compute cache key ... "/public": not found`. The Dockerfile's last COPY was `COPY --from=builder --chown=nextjs:nodejs /app/public ./public 2>/dev/null || true` — the shell fallback is a lie. Dockerfile `COPY` is a buildkit built-in; `2>/dev/null || true` is shell syntax that buildkit does not execute between layer steps.
+
+**Timeline.** Writing the Fly deploy artifacts; needed to verify the Dockerfile builds locally before documenting the deploy flow. First build failed on the `public/` COPY because the project didn't have a `public/` directory and buildkit (unlike shell) treats a missing source as a hard error.
+
+**Root cause.** Two layered mistakes:
+1. The Dockerfile pretended `COPY` could fall back via shell. It cannot.
+2. The project didn't ship a `public/` dir because the Chat UI didn't need static assets at scaffold time.
+
+**Fix.**
+1. Create `public/.gitkeep` so the dir exists in the build context.
+2. Remove the `2>/dev/null || true` suffix from the Dockerfile COPY. Fail-loud is correct: if `public/` is missing, the build should surface it.
+
+**What changed.** The Dockerfile is now 100% buildkit-valid. The `public/.gitkeep` is tracked. If a future contributor removes `public/`, `docker build` fails immediately. `docs/DEPLOY.md` lists the pre-deploy local smoke test (`docker build -t ear-local . && docker run ...`) explicitly to catch regressions before paying for a Fly remote build.
+
+---
+
 ## Not written up (yet)
 
 Prospective incidents from the FINAL plan §9 that haven't actually happened:

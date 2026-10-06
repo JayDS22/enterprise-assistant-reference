@@ -20,18 +20,16 @@ Not written yet. See `_handoff/project-1-FINAL-plan.md` §7 for the day-by-day d
 
 ## Measured latency (local, 2026-10-06)
 
-Serial curl probe against a live dev stack (Next 15 + local Postgres + hosted OpenAI gpt-4o-2024-11-20), 10 samples, warm:
+Live dev stack: Next 15 + local Postgres (10k customers / 40k tickets / 500 docs) + hosted OpenAI `gpt-4o-2024-11-20`. Realistic enterprise prompts (renewal lookups, policy questions, ticket creation).
 
-| Metric | Value |
-|---|---|
-| min | 0.839s |
-| p50 | 1.475s |
-| p95 | 8.187s |
-| max | 8.187s |
+| Measurement | Samples | avg | p50 | p95 | max | err rate | SSE hit |
+|---|---|---|---|---|---|---|---|
+| Serial curl (`q=2+2?`, no tool call) | 10 | — | 1.475s | 8.187s | 8.187s | 0% | — |
+| k6 (`--vus 2 --duration 20s`, random prompts, warm) | 10 | 4.398s | — | 7.134s | 7.229s | 0% | 100% |
 
-p95 is driven by supervisor-handoff cycles (two chat completions per request on the handoff path). Not production-grade. Honest signal of what the reference impl delivers out-of-the-box.
+**p95 driver.** Supervisor-handoff cycles. Each request to `/api/chat` triggers at minimum two OpenAI chat completions: the supervisor's triage call + the sub-agent's answer call. When a sub-agent needs a tool (customer lookup, ticket search), add a third round-trip. The reference impl prioritizes a correct multi-agent shape over latency — mitigations (smaller handoff model, direct answer for simple queries, prompt caching) are day-9+ work.
 
-k6 numbers under concurrency are the next measurement — `scripts/k6_latency.js` is ready to run, k6 install is a user action.
+**Not run:** the full 20-VU 3-min k6 profile in `scripts/k6_latency.js`. Would cost ~$9+ in OpenAI tokens for numbers already visible in the probes. Run it with `pnpm k6` once Fly deploy is live + you have ~$10 to burn.
 
 ## Known trade-offs
 
