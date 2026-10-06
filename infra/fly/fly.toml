@@ -14,7 +14,9 @@ primary_region = "sjc"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 0
+  # ~$1.70/mo to keep one VM warm; drop back to 0 if demo window closes.
+  # Second machine (HA replica) still idles via auto_stop_machines = "stop".
+  min_machines_running = 1
   processes = ["app"]
 
   [http_service.concurrency]

@@ -1,7 +1,9 @@
 import { NextRequest } from "next/server";
 import { createHash } from "node:crypto";
 import { checkAndConsume } from "@/lib/rate_limit";
+import { checkAndRecord } from "@/lib/cost_breaker";
 import { piiInputGuard } from "../../../src/guardrails/pii_input";
+import { piiOutputGuard } from "../../../src/guardrails/pii_output";
 import { runSupervisor, estimateCostUsd } from "../../../src/agents/supervisor";
 import { withTenant } from "@/db/client";
 
@@ -65,6 +67,29 @@ export async function POST(req: NextRequest) {
   const { safeMessages } = piiInputGuard(body.messages);
   const argsHash = sha256(JSON.stringify(safeMessages));
 
+  // Probe cost ceilings BEFORE calling the supervisor. A $0 record is a
+  // read-only check: it fails iff historical spend on this conversation or
+  // this tenant-day already exceeds its cap. Guards against runaway loops
+  // where a tenant keeps POSTing after they've already blown the budget.
+  // Fail-closed: a module throw means we can't verify the budget → 500.
+  try {
+    const probe = checkAndRecord({ tenantId, conversationId: body.conversationId, usd: 0 });
+    if (!probe.allowed) {
+      return new Response(
+        JSON.stringify({ error: "cost_cap_exceeded", reason: probe.reason }),
+        {
+          status: 402,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: "cost_breaker_error", detail: (err as Error).message }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   // ponytail: real streamed supervisor loop lands day 3. For now, invoke it,
   // catch the known "not implemented" throw, emit one SSE frame and close.
   let replyContent: string;
@@ -98,16 +123,56 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Record actual spend post-supervisor. The OpenAI call already happened and
+  // cannot be un-called — if this trips the cap, we still serve THIS response
+  // and let the breaker reject the NEXT request. Warn-and-continue by design.
+  if (typeof supervisorCost === "number" && supervisorCost > 0) {
+    try {
+      const rec = checkAndRecord({
+        tenantId,
+        conversationId: body.conversationId,
+        usd: supervisorCost,
+      });
+      if (!rec.allowed) {
+        console.warn(
+          `cost_breaker: cap tripped post-spend tenant=${tenantId} conv=${body.conversationId} reason=${rec.reason}`,
+        );
+      }
+    } catch (err) {
+      console.warn("cost_breaker record failed:", (err as Error).message);
+    }
+  }
+
+  // Scan the final reply for PII before it leaves the server. On hit, replace
+  // the content with a policy message and flag the frame so Chat.tsx + eval
+  // scorecard can count the block. Fail-closed on module throw → 500.
+  // See src/guardrails/pii_output.ts for chunk-boundary caveat.
+  let piiBlocked = false;
+  try {
+    const guard = piiOutputGuard(replyContent);
+    if (!guard.safe) {
+      piiBlocked = true;
+      replyContent = `Blocked: output flagged for ${guard.reason}. Please rephrase.`;
+    }
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: "pii_output_guard_error", detail: (err as Error).message }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   const resultHash = sha256(replyContent);
 
   // Audit the turn. Best-effort: a DB outage shouldn't break the stream for
-  // the reviewer path. Log and continue.
+  // the reviewer path. Log and continue. Blocked turns audit with the
+  // sanitized reply + a distinct tool_name so the compliance query can
+  // isolate them.
   try {
     await withTenant(tenantId, async (tx) => {
       await tx.query(
         `INSERT INTO audit_log (tenant_id, user_id, tool_name, args_hash, result_hash)
-         VALUES ($1, $2, 'chat.turn', $3, $4)`,
-        [tenantId, userId, argsHash, resultHash],
+         VALUES ($1, $2, $3, $4, $5)`,
+        [tenantId, userId, piiBlocked ? "chat.turn.blocked" : "chat.turn", argsHash, resultHash],
       );
     });
   } catch (err) {
@@ -132,7 +197,12 @@ export async function POST(req: NextRequest) {
       );
       controller.enqueue(
         encoder.encode(
-          sseFrame({ role: "assistant", content: replyContent, costUsd: supervisorCost }),
+          sseFrame({
+            role: "assistant",
+            content: replyContent,
+            costUsd: supervisorCost,
+            piiBlocked,
+          }),
         ),
       );
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));

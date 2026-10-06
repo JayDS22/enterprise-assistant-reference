@@ -52,7 +52,7 @@ Live dev stack: Next 15 + local Postgres (10k customers / 40k tickets / 500 docs
 
 ## Known trade-offs
 
-- **Live demo first request takes ~15s cold** when deployed on Neon free tier (auto-suspends after 5 min idle). The local-dev number above is warm-state.
+- **Cold start:** Fly keeps `min_machines_running = 1` so the first VM stays warm (~$1.70/mo overhead). Neon auto-suspends after 5 min idle; a GitHub Actions cron pings `warm_neon.ts` every 4 min to prevent suspend. If both knobs are off, the first click after idle adds ~15s.
 - **This is a reference impl, not a product.** 500 docs, 10k customers, single region. Scaling notes in `docs/ARCHITECTURE.md`.
 - **LLM-judge calibrated on 20-row gold sets per judged scenario.** Statistically directional, not definitive. See `docs/EVALS.md`.
 - **Zod validates request shapes; SQL safety comes from `pg` parameterized queries, not from Zod.** Confusing the two is a common eval-literacy fail; we call it out explicitly.

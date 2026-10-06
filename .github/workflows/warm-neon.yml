@@ -1,0 +1,33 @@
+name: warm-neon
+
+# Pings Neon every 4 min so the free-tier branch doesn't auto-suspend after 5
+# min idle. Opt-in: set DATABASE_URL_ADMIN as a repo secret to arm it. Without
+# the secret, the pg client throws immediately and the job fails loudly — that's
+# fine. The Fly-side cold (min_machines_running = 1 in infra/fly/fly.toml)
+# already handles the Fly VM warmth independently.
+
+on:
+  schedule:
+    - cron: "*/4 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: warm-neon
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tsx scripts/warm_neon.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_ADMIN }}
+          ONE_SHOT: "1"

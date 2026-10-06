@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from "pg";
+import { withCustomSpan } from "@openai/agents";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -27,19 +28,32 @@ export async function withTenant<T>(
   fn: (tx: PoolClient) => Promise<T>,
 ): Promise<T> {
   if (!tenantId) throw new Error("withTenant: tenantId required");
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
-    const result = await fn(client);
-    await client.query("COMMIT");
-    return result;
-  } catch (err) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    throw err;
-  } finally {
-    client.release();
-  }
+  // Agents SDK custom span — captured by the processors wired in src/otel/setup.ts.
+  // Attribute names follow OTel semantic conventions for gen_ai/db so dashboard.json
+  // panels (which key off `db.*`) light up.
+  return withCustomSpan(
+    async () => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
+        const result = await fn(client);
+        await client.query("COMMIT");
+        return result;
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+    {
+      data: {
+        name: "db.withTenant",
+        data: { "db.tenant_id": tenantId, "db.system": "postgresql" },
+      },
+    },
+  );
 }
 
 export async function closePool(): Promise<void> {

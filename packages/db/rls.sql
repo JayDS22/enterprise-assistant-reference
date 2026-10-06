@@ -8,6 +8,20 @@
 -- role that created the table), so a superuser bypasses every policy. The app connects
 -- as the DB owner in the reference impl, so FORCE is required or the test suite proves
 -- the policy is theatre. See INCIDENTS.md incident #4 for the catch.
+--
+-- WHY BOTH `USING` AND `WITH CHECK` (INCIDENTS.md #4.9):
+--   USING is the read/visibility predicate: Postgres applies it to the SELECT phase and
+--     to the "existing row" side of UPDATE/DELETE.
+--   WITH CHECK is the write predicate: Postgres applies it to new/modified rows on
+--     INSERT and UPDATE.
+--   If a policy is defined with only `USING`, Postgres silently copies the USING expr
+--   into WITH CHECK for INSERT/UPDATE (per docs). That default is correct for the
+--   simple tenant-isolation case here — but it is implicit, and a future policy edit
+--   (e.g. a reviewer adding `FOR SELECT USING (...)` without the matching write policy,
+--   or splitting into FOR SELECT + FOR INSERT) can accidentally leave INSERT/UPDATE
+--   unconstrained. We spell WITH CHECK out so the write constraint is visible on every
+--   policy and the regression test in client.spec.ts fails loudly if either half is
+--   dropped. Ref: https://www.postgresql.org/docs/current/sql-createpolicy.html
 
 ALTER TABLE customers         ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY;
 ALTER TABLE subscriptions     ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY;
@@ -18,25 +32,32 @@ ALTER TABLE audit_log         ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURIT
 ALTER TABLE cost_rollup_daily ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON customers
-  USING (tenant_id = current_setting('app.tenant_id', true));
+  USING      (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
 
 CREATE POLICY tenant_isolation ON subscriptions
-  USING (tenant_id = current_setting('app.tenant_id', true));
+  USING      (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
 
 CREATE POLICY tenant_isolation ON tickets
-  USING (tenant_id = current_setting('app.tenant_id', true));
+  USING      (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
 
 CREATE POLICY tenant_isolation ON idempotency_keys
-  USING (tenant_id = current_setting('app.tenant_id', true));
+  USING      (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
 
 CREATE POLICY tenant_isolation ON docs
-  USING (tenant_id = current_setting('app.tenant_id', true));
+  USING      (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
 
 CREATE POLICY tenant_isolation ON audit_log
-  USING (tenant_id = current_setting('app.tenant_id', true));
+  USING      (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
 
 CREATE POLICY tenant_isolation ON cost_rollup_daily
-  USING (tenant_id = current_setting('app.tenant_id', true));
+  USING      (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
 
 -- Non-superuser application role. The app's DATABASE_URL MUST point at this
 -- role, not the DB owner. Superusers and table owners bypass RLS even with

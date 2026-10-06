@@ -3,15 +3,18 @@
 // is unacceptable for the demo window. Documented, not default.
 //
 // Usage:
-//   DATABASE_URL=... INTERVAL_SEC=240 pnpm tsx scripts/warm_neon.ts
+//   DATABASE_URL=... INTERVAL_SEC=240 pnpm tsx scripts/warm_neon.ts   # loop
+//   DATABASE_URL=... ONE_SHOT=1 pnpm tsx scripts/warm_neon.ts         # one ping, exit
 //
 // Default interval is 240s (4 min) because Neon auto-suspends after 5 min idle.
-// 240s gives a 60s margin before suspend.
+// 240s gives a 60s margin before suspend. ONE_SHOT is the GitHub Actions cron mode
+// (see .github/workflows/warm-neon.yml).
 
 import { Client } from "pg";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const INTERVAL_SEC = Number(process.env.INTERVAL_SEC ?? 240);
+const ONE_SHOT = process.env.ONE_SHOT === "1";
 
 if (!DATABASE_URL) {
   console.error("warm_neon: DATABASE_URL not set, exiting");
@@ -29,6 +32,17 @@ async function ping(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  if (ONE_SHOT) {
+    const t0 = Date.now();
+    try {
+      await ping();
+      console.log(`warm_neon: ok (${Date.now() - t0}ms)`);
+    } catch (err) {
+      console.error(`warm_neon: failed`, err);
+      process.exit(1);
+    }
+    return;
+  }
   console.log(`warm_neon: pinging every ${INTERVAL_SEC}s`);
   for (;;) {
     const t0 = Date.now();

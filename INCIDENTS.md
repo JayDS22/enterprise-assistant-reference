@@ -71,6 +71,21 @@ Postmortems from bugs hit during the build. Format per FINAL plan §9: TL;DR, Ti
 
 **Reviewer-visible value.** All three bugs were caught in minutes by one integration test. The FINAL plan said "there is a test that catches the bypass" — the test caught three independent bypass paths on first run, which is a stronger signal than finding one. Each failure mode is a bullet-point gotcha for anyone else wiring Postgres RLS behind an application layer.
 
+### 9. The WITH CHECK clause we initially missed
+
+**TL;DR.** `rls.sql` originally wrote every policy as `CREATE POLICY ... USING (tenant_id = current_setting(...))` with no explicit `WITH CHECK`. In the default `FOR ALL` policy shape Postgres silently copies USING into WITH CHECK, so the integration tests passed and cross-tenant INSERTs were in fact rejected. But the write constraint was implicit: any future edit that split the policy into `FOR SELECT` + `FOR INSERT` (or wrote a `FOR SELECT USING (...)` without the matching write policy) would quietly leave INSERT/UPDATE unconstrained, and the existing tests would not notice. README/INCIDENTS #4 both claim "RLS is the enforcement surface" — a hostile reviewer catching the implicit write path with a single cross-tenant INSERT probe would be a credibility hit.
+
+**Timeline.** Hostile review of the public repo flagged the pattern. Repro: `BEGIN; SELECT set_config('app.tenant_id','A',true); INSERT INTO customers (tenant_id,id,...) VALUES ('B',...);` — in the current `FOR ALL USING(...)` shape this rejects correctly, but only because of Postgres's silent WITH-CHECK fallback. The policy did not visibly defend against INSERT/UPDATE.
+
+**Root cause.** `USING` is the read/visibility predicate (applied to SELECT and the "existing row" side of UPDATE/DELETE). `WITH CHECK` is the write predicate (applied to new/modified rows on INSERT and UPDATE). For a `FOR ALL` policy with only `USING`, Postgres copies USING into WITH CHECK as a default — correct by accident, implicit by design. The policy did not survive refactor pressure.
+
+**Fix.**
+- `packages/db/rls.sql`: every `CREATE POLICY tenant_isolation` now spells out BOTH `USING (tenant_id = current_setting('app.tenant_id', true))` AND `WITH CHECK (tenant_id = current_setting('app.tenant_id', true))`. Top-of-file comment block explains the USING vs WITH CHECK distinction and links to the Postgres docs.
+- `packages/db/client.spec.ts`: new test `WITH CHECK blocks cross-tenant INSERT and allows same-tenant INSERT`. From a tenant-A session, inserting `(tenant_id='B', ...)` must throw a Postgres error matching `/row-level security/i`; inserting `(tenant_id='A', ...)` must succeed and is then cleaned up. The test comments point at the exact two-line policy mutation that makes it fail.
+- No DB migration applied automatically — the author re-applies `rls.sql` manually against local Postgres and Neon.
+
+**What changed.** Test count 42 → 43. The write-side of every policy is now visible on inspection and defended by a regression test on every `pnpm test` run.
+
 ---
 
 ## 5. Next 15 middleware didn't forward tenant headers to the route handler

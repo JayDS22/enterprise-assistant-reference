@@ -121,8 +121,8 @@ gh secret set FLY_API_TOKEN            # paste the token
 
 ## Operational realities (honest)
 
-- **Cold start.** Fly auto-stops idle machines after a few min to save compute. First request after idle takes ~3-5s. If your reviewer window is time-boxed, set `min_machines_running = 1` in `fly.toml` to pin at least one VM. Costs ~$1.70/mo.
-- **Neon auto-suspend.** Free-tier Neon branches suspend after 5 min idle. First query after suspend adds ~5-8s. Mitigate with `scripts/warm_neon.ts` (cron on Fly or GitHub Actions) or pay for Neon's always-on tier.
+- **Cold start.** `infra/fly/fly.toml` ships with `min_machines_running = 1`, so one VM stays warm (~$1.70/mo). The HA replica still idles via `auto_stop_machines = "stop"`. Drop back to `0` if the demo window closes.
+- **Neon auto-suspend.** Free-tier Neon branches suspend after 5 min idle. First query after suspend adds ~5-8s. `.github/workflows/warm-neon.yml` pings every 4 min via `scripts/warm_neon.ts` (one-shot mode) — opt-in by setting `DATABASE_URL_ADMIN` as a repo secret. Without the secret the workflow fails loudly; the Fly knob above still handles the VM-side cold independently.
 - **Secret rotation.** `flyctl secrets set` triggers a rolling restart. Don't rotate during the demo window.
 - **Scaling.** `flyctl scale count 2` for horizontal; `flyctl scale memory 1024` for vertical. The reference impl's in-memory rate limiter + cost breaker DO NOT survive multi-instance; upgrade to Redis before scaling horizontally. Marked in `app/lib/rate_limit.ts` + `app/lib/cost_breaker.ts` with `ponytail:` comments.
 - **Migrations.** Future migrations are operator-run via `psql "$DATABASE_URL_ADMIN"` against Neon. No `release_command` in `fly.toml`; mixing migrations with deploy risks a partial-rollback mismatch when the migration succeeds but the new release fails.
