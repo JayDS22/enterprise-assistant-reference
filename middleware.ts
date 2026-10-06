@@ -5,10 +5,19 @@ import { verifyJwt } from "@/lib/jwt";
 // Rate limit + cost breaker are stubbed; see app/lib/rate_limit.ts + cost_breaker.ts.
 
 export const config = {
-  matcher: ["/(chat)/:path*", "/api/:path*"],
+  // Match everything under /api/*. demo-jwt is listed as public below so the
+  // matcher stays simple (regex-exclude in Next matcher syntax is finicky).
+  matcher: ["/api/:path*"],
 };
 
+// Routes under /api/* that MUST NOT require auth. Keep tight; every entry
+// here is a public attack surface.
+const PUBLIC_API_PATHS = new Set<string>(["/api/demo-jwt"]);
+
 export async function middleware(req: NextRequest) {
+  if (PUBLIC_API_PATHS.has(req.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
   const auth = req.headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
