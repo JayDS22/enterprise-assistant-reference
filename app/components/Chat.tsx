@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import ToolCallCard from "./ToolCallCard";
 import CitationList from "./CitationList";
 
@@ -11,36 +13,93 @@ type Message = {
   content: string;
   toolCalls?: ToolCall[];
   citations?: Citation[];
+  handoff?: string;
 };
 
 type Props = { initialTenantId: string; initialUserId: string };
 
 const JWT_KEY = "jwt_token";
 
+const EXAMPLE_PROMPTS = [
+  "What's the renewal date for the customer who filed ticket tkt-A-000001?",
+  "What's our refund policy for annual plans?",
+  "Show me the last 5 open tickets.",
+  "Create a priority-high ticket: billing portal 500s on checkout.",
+];
+
+// Decode a JWT payload client-side for display. NO verification; this is for
+// showing tenant/user in the header, not for authorization. The route handler
+// does the real verify.
+function decodeJwtPayload(token: string): { tenant_id?: string; sub?: string } | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3 || !parts[1]) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
 export default function Chat(_: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasJwt, setHasJwt] = useState<boolean>(false);
+  const [jwtClaims, setJwtClaims] = useState<{ tenant?: string; user?: string } | null>(
+    null,
+  );
+  const [loadingDemo, setLoadingDemo] = useState(false);
   const conversationIdRef = useRef<string>(
     typeof crypto !== "undefined" && crypto.randomUUID
       ? crypto.randomUUID()
       : String(Date.now()),
   );
 
+  function syncJwtClaims() {
+    const token = typeof window !== "undefined" ? localStorage.getItem(JWT_KEY) : null;
+    if (!token) {
+      setJwtClaims(null);
+      return;
+    }
+    const payload = decodeJwtPayload(token);
+    setJwtClaims(payload ? { tenant: payload.tenant_id, user: payload.sub } : null);
+  }
+
   useEffect(() => {
-    setHasJwt(Boolean(localStorage.getItem(JWT_KEY)));
+    syncJwtClaims();
   }, []);
 
-  async function send(e: React.FormEvent) {
-    e.preventDefault();
+  async function loadDemo() {
+    setLoadingDemo(true);
+    setError(null);
+    try {
+      const resp = await fetch("/api/demo-jwt");
+      if (!resp.ok) throw new Error(`demo-jwt ${resp.status}`);
+      const { token } = (await resp.json()) as { token: string };
+      localStorage.setItem(JWT_KEY, token);
+      syncJwtClaims();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoadingDemo(false);
+    }
+  }
+
+  function fillPrompt(p: string) {
+    if (streaming) return;
+    setInput(p);
+  }
+
+  async function send(e?: React.FormEvent) {
+    if (e) e.preventDefault();
     if (!input.trim() || streaming) return;
     setError(null);
 
     const token = localStorage.getItem(JWT_KEY);
     if (!token) {
-      setError("No jwt_token in localStorage.");
+      setError("No jwt_token. Click 'Load demo session' above.");
       return;
     }
 
@@ -66,6 +125,9 @@ export default function Chat(_: Props) {
         const ra = resp.headers.get("Retry-After") ?? "?";
         throw new Error(`rate-limited (retry after ${ra}s)`);
       }
+      if (resp.status === 401) {
+        throw new Error("auth failed. Click 'Load demo session' to refresh the JWT.");
+      }
       if (!resp.ok || !resp.body) {
         throw new Error(`request failed: ${resp.status}`);
       }
@@ -76,11 +138,6 @@ export default function Chat(_: Props) {
       let assistant: Message = { role: "assistant", content: "" };
       setMessages((prev) => [...prev, assistant]);
 
-      // SSE parse: split on \n\n, each frame has `data: {json}` lines.
-      // ponytail: minimal parser; good enough for text/event-stream from our route.
-      // Upgrade to EventSource if we need auto-reconnect.
-      // (EventSource can't send Authorization headers, which is why fetch+reader here.)
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -99,6 +156,7 @@ export default function Chat(_: Props) {
               content: (assistant.content ?? "") + (payload.content ?? ""),
               toolCalls: payload.toolCalls ?? assistant.toolCalls,
               citations: payload.citations ?? assistant.citations,
+              handoff: payload.handoff ?? assistant.handoff,
             };
             setMessages((prev) => {
               const copy = prev.slice();
@@ -117,37 +175,113 @@ export default function Chat(_: Props) {
     }
   }
 
+  const hasJwt = jwtClaims !== null;
+
   return (
     <div style={{ maxWidth: 760, margin: "0 auto", padding: 16 }}>
-      {!hasJwt && (
-        <div
-          style={{
-            background: "#fff8c5",
-            border: "1px solid #e0c200",
-            padding: 8,
-            marginBottom: 12,
-            fontSize: 13,
-            borderRadius: 4,
-          }}
-        >
-          Set <code>jwt_token</code> in localStorage to a signed test JWT.
-        </div>
-      )}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 12,
+          padding: "8px 12px",
+          background: hasJwt ? "#f0fdf4" : "#fff8c5",
+          border: `1px solid ${hasJwt ? "#86efac" : "#e0c200"}`,
+          borderRadius: 6,
+          fontSize: 13,
+        }}
+      >
+        <span>
+          {hasJwt ? (
+            <>
+              signed in <strong>·</strong> tenant <code>{jwtClaims?.tenant ?? "?"}</code>{" "}
+              <strong>·</strong> user <code>{jwtClaims?.user ?? "?"}</code>
+            </>
+          ) : (
+            <>no JWT loaded. click to mint a 1-hour tenant-A reviewer token:</>
+          )}
+        </span>
+        {!hasJwt && (
+          <button
+            onClick={loadDemo}
+            disabled={loadingDemo}
+            style={{
+              padding: "4px 10px",
+              fontSize: 12,
+              border: "1px solid #111",
+              background: "#111",
+              color: "#fff",
+              borderRadius: 4,
+              cursor: loadingDemo ? "wait" : "pointer",
+            }}
+          >
+            {loadingDemo ? "..." : "Load demo session"}
+          </button>
+        )}
+      </div>
 
-      <div style={{ border: "1px solid #ddd", borderRadius: 4, minHeight: 320, padding: 12 }}>
+      <div
+        style={{
+          border: "1px solid #ddd",
+          borderRadius: 6,
+          minHeight: 320,
+          padding: 12,
+          background: "#fff",
+        }}
+      >
         {messages.length === 0 && (
-          <div style={{ color: "#999", fontSize: 13 }}>No messages yet.</div>
+          <div style={{ color: "#888", fontSize: 13 }}>
+            Try one of the prompts below, or type your own.
+          </div>
         )}
         {messages.map((m, i) => (
-          <div key={i} data-role={m.role} style={{ margin: "10px 0" }}>
-            <div style={{ fontSize: 11, color: "#777", textTransform: "uppercase" }}>
+          <div
+            key={i}
+            data-role={m.role}
+            style={{
+              margin: "12px 0",
+              paddingBottom: 12,
+              borderBottom: i < messages.length - 1 ? "1px dashed #eee" : "none",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                color: "#777",
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                marginBottom: 4,
+              }}
+            >
               {m.role}
+              {m.handoff && (
+                <span style={{ marginLeft: 8, color: "#2563eb" }}>
+                  &rarr; handed off to {m.handoff}
+                </span>
+              )}
             </div>
-            <div style={{ whiteSpace: "pre-wrap", fontSize: 14 }}>{m.content}</div>
-            {m.toolCalls?.map((tc, j) => (
-              <ToolCallCard key={j} name={tc.name} args={tc.args} result={tc.result} />
-            ))}
-            {m.citations && <CitationList citations={m.citations} />}
+            {m.toolCalls && m.toolCalls.length > 0 && (
+              <div style={{ margin: "6px 0" }}>
+                {m.toolCalls.map((tc, j) => (
+                  <ToolCallCard key={j} name={tc.name} args={tc.args} result={tc.result} />
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 14, lineHeight: 1.55 }}>
+              {m.role === "assistant" ? (
+                m.content === "" && streaming && i === messages.length - 1 ? (
+                  <span style={{ color: "#888", fontStyle: "italic" }}>
+                    thinking<span className="dots">...</span>
+                  </span>
+                ) : (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                )
+              ) : (
+                <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
+              )}
+            </div>
+            {m.citations && m.citations.length > 0 && <CitationList citations={m.citations} />}
           </div>
         ))}
       </div>
@@ -186,6 +320,34 @@ export default function Chat(_: Props) {
           Send
         </button>
       </form>
+
+      <div
+        style={{
+          marginTop: 10,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 6,
+        }}
+      >
+        {EXAMPLE_PROMPTS.map((p) => (
+          <button
+            key={p}
+            onClick={() => fillPrompt(p)}
+            disabled={streaming}
+            style={{
+              padding: "4px 10px",
+              fontSize: 12,
+              background: "#f3f4f6",
+              border: "1px solid #d1d5db",
+              borderRadius: 999,
+              cursor: streaming ? "not-allowed" : "pointer",
+              color: "#374151",
+            }}
+          >
+            {p.length > 48 ? p.slice(0, 46) + "..." : p}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

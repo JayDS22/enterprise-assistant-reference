@@ -68,6 +68,8 @@ export async function POST(req: NextRequest) {
   // ponytail: real streamed supervisor loop lands day 3. For now, invoke it,
   // catch the known "not implemented" throw, emit one SSE frame and close.
   let replyContent: string;
+  let supervisorToolCalls: Array<{ name: string; args: unknown }> = [];
+  let supervisorHandoff: string | undefined;
   try {
     const out = await runSupervisor({
       tenantId,
@@ -75,6 +77,8 @@ export async function POST(req: NextRequest) {
       conversation: safeMessages as IncomingMessage[],
     });
     replyContent = out.reply;
+    supervisorToolCalls = out.tool_calls.map((t) => ({ name: t.name, args: t.args }));
+    supervisorHandoff = out.handoff;
   } catch (err) {
     const msg = (err as Error).message ?? "";
     if (msg.includes("not implemented")) {
@@ -107,6 +111,19 @@ export async function POST(req: NextRequest) {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder();
+      // Emit tool calls + handoff first so the UI can render them above the
+      // final content frame. If the supervisor made no tool calls, this frame
+      // is just {toolCalls: []} and the UI collapses it.
+      controller.enqueue(
+        encoder.encode(
+          sseFrame({
+            role: "assistant",
+            content: "",
+            toolCalls: supervisorToolCalls,
+            handoff: supervisorHandoff,
+          }),
+        ),
+      );
       controller.enqueue(
         encoder.encode(sseFrame({ role: "assistant", content: replyContent })),
       );
