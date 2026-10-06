@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ArrowRight, Sparkles, LogIn, Zap } from "lucide-react";
 import ToolCallCard from "./ToolCallCard";
 import CitationList from "./CitationList";
+import { agentColorVar } from "../lib/ui-constants";
 
 type Citation = { docId: string; title: string; score: number };
 type ToolCall = { name: string; args: unknown; result?: unknown };
@@ -14,23 +16,13 @@ type Message = {
   toolCalls?: ToolCall[];
   citations?: Citation[];
   handoff?: string;
+  latencyMs?: number;
+  costUsd?: number;
 };
-
-type Props = { initialTenantId: string; initialUserId: string };
 
 const JWT_KEY = "jwt_token";
 
-const EXAMPLE_PROMPTS = [
-  "What's the renewal date for the customer who filed ticket tkt-A-000001?",
-  "What's our refund policy for annual plans?",
-  "Show me the last 5 open tickets.",
-  "Create a priority-high ticket: billing portal 500s on checkout.",
-];
-
-// Decode a JWT payload client-side for display. NO verification; this is for
-// showing tenant/user in the header, not for authorization. The route handler
-// does the real verify.
-function decodeJwtPayload(token: string): { tenant_id?: string; sub?: string } | null {
+function decodeJwtPayload(token: string): { tenant_id?: string; sub?: string; exp?: number } | null {
   try {
     const parts = token.split(".");
     if (parts.length !== 3 || !parts[1]) return null;
@@ -42,15 +34,14 @@ function decodeJwtPayload(token: string): { tenant_id?: string; sub?: string } |
   }
 }
 
-export default function Chat(_: Props) {
+export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [jwtClaims, setJwtClaims] = useState<{ tenant?: string; user?: string } | null>(
-    null,
-  );
+  const [jwtClaims, setJwtClaims] = useState<{ tenant?: string; user?: string } | null>(null);
   const [loadingDemo, setLoadingDemo] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const conversationIdRef = useRef<string>(
     typeof crypto !== "undefined" && crypto.randomUUID
       ? crypto.randomUUID()
@@ -59,16 +50,31 @@ export default function Chat(_: Props) {
 
   function syncJwtClaims() {
     const token = typeof window !== "undefined" ? localStorage.getItem(JWT_KEY) : null;
-    if (!token) {
-      setJwtClaims(null);
-      return;
-    }
+    if (!token) return setJwtClaims(null);
     const payload = decodeJwtPayload(token);
     setJwtClaims(payload ? { tenant: payload.tenant_id, user: payload.sub } : null);
   }
 
   useEffect(() => {
     syncJwtClaims();
+  }, []);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
+
+  // Clicks from sidebar example chips land here via document delegation.
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      const btn = t.closest(".prompt-chip") as HTMLElement | null;
+      if (btn?.dataset.prompt) {
+        setInput(btn.dataset.prompt);
+        document.getElementById("chat-input")?.focus();
+      }
+    };
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
   }, []);
 
   async function loadDemo() {
@@ -87,11 +93,6 @@ export default function Chat(_: Props) {
     }
   }
 
-  function fillPrompt(p: string) {
-    if (streaming) return;
-    setInput(p);
-  }
-
   async function send(e?: React.FormEvent) {
     if (e) e.preventDefault();
     if (!input.trim() || streaming) return;
@@ -99,22 +100,20 @@ export default function Chat(_: Props) {
 
     const token = localStorage.getItem(JWT_KEY);
     if (!token) {
-      setError("No jwt_token. Click 'Load demo session' above.");
+      setError("No session loaded. Click 'Load demo session' above.");
       return;
     }
 
     const next: Message[] = [...messages, { role: "user", content: input }];
     setMessages(next);
+    const t0 = performance.now();
     setInput("");
     setStreaming(true);
 
     try {
       const resp = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           conversationId: conversationIdRef.current,
           messages: next.map((m) => ({ role: m.role, content: m.content })),
@@ -128,9 +127,7 @@ export default function Chat(_: Props) {
       if (resp.status === 401) {
         throw new Error("auth failed. Click 'Load demo session' to refresh the JWT.");
       }
-      if (!resp.ok || !resp.body) {
-        throw new Error(`request failed: ${resp.status}`);
-      }
+      if (!resp.ok || !resp.body) throw new Error(`request failed: ${resp.status}`);
 
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
@@ -164,10 +161,17 @@ export default function Chat(_: Props) {
               return copy;
             });
           } catch {
-            // ignore malformed frame
+            /* ignore */
           }
         }
       }
+
+      const latencyMs = Math.round(performance.now() - t0);
+      setMessages((prev) => {
+        const copy = prev.slice();
+        copy[copy.length - 1] = { ...copy[copy.length - 1]!, latencyMs };
+        return copy;
+      });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -178,175 +182,179 @@ export default function Chat(_: Props) {
   const hasJwt = jwtClaims !== null;
 
   return (
-    <div style={{ maxWidth: 760, margin: "0 auto", padding: 16 }}>
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Session banner */}
       <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 12,
-          padding: "8px 12px",
-          background: hasJwt ? "#f0fdf4" : "#fff8c5",
-          border: `1px solid ${hasJwt ? "#86efac" : "#e0c200"}`,
-          borderRadius: 6,
-          fontSize: 13,
-        }}
+        className={`mx-6 mt-5 rounded-lg border px-4 py-2.5 text-[13px] flex items-center justify-between ${
+          hasJwt
+            ? "border-success/30 bg-success/5 text-text"
+            : "border-warn/40 bg-warn/5 text-text"
+        }`}
       >
-        <span>
+        <div className="flex items-center gap-2.5">
           {hasJwt ? (
             <>
-              signed in <strong>·</strong> tenant <code>{jwtClaims?.tenant ?? "?"}</code>{" "}
-              <strong>·</strong> user <code>{jwtClaims?.user ?? "?"}</code>
+              <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+              <span className="text-text-muted">signed in as</span>
+              <code className="font-mono bg-bg-input px-1.5 py-0.5 rounded">
+                tenant {jwtClaims?.tenant}
+              </code>
+              <code className="font-mono bg-bg-input px-1.5 py-0.5 rounded">
+                {jwtClaims?.user}
+              </code>
             </>
           ) : (
-            <>no JWT loaded. click to mint a 1-hour tenant-A reviewer token:</>
+            <>
+              <Sparkles size={14} className="text-warn" />
+              <span>Click to mint a 1-hour tenant-A reviewer token:</span>
+            </>
           )}
-        </span>
+        </div>
         {!hasJwt && (
           <button
             onClick={loadDemo}
             disabled={loadingDemo}
-            style={{
-              padding: "4px 10px",
-              fontSize: 12,
-              border: "1px solid #111",
-              background: "#111",
-              color: "#fff",
-              borderRadius: 4,
-              cursor: loadingDemo ? "wait" : "pointer",
-            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent/90 hover:bg-accent text-bg text-[12px] font-medium transition disabled:opacity-50 disabled:cursor-wait"
           >
-            {loadingDemo ? "..." : "Load demo session"}
+            <LogIn size={13} />
+            {loadingDemo ? "minting..." : "Load demo session"}
           </button>
         )}
       </div>
 
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 6,
-          minHeight: 320,
-          padding: 12,
-          background: "#fff",
-        }}
-      >
+      {/* Chat log */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pb-4 pt-5 min-h-0">
         {messages.length === 0 && (
-          <div style={{ color: "#888", fontSize: 13 }}>
-            Try one of the prompts below, or type your own.
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center max-w-md">
+              <div className="w-14 h-14 mx-auto rounded-xl bg-accent/10 border border-accent/30 flex items-center justify-center mb-4">
+                <Sparkles size={22} className="text-accent" />
+              </div>
+              <h2 className="text-base font-semibold mb-1">Multi-agent enterprise assistant</h2>
+              <p className="text-[13px] text-text-muted leading-relaxed">
+                Supervisor routes to <span style={{ color: "var(--color-agent-billing)" }}>billing</span>
+                , <span style={{ color: "var(--color-agent-tickets)" }}>tickets</span>, or{" "}
+                <span style={{ color: "var(--color-agent-kb)" }}>kb</span>. Each tool call hits a
+                live Postgres with RLS tenant isolation.
+              </p>
+              <p className="text-[12px] text-text-dim mt-3">
+                Try a prompt from the sidebar &rarr;
+              </p>
+            </div>
           </div>
         )}
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            data-role={m.role}
-            style={{
-              margin: "12px 0",
-              paddingBottom: 12,
-              borderBottom: i < messages.length - 1 ? "1px dashed #eee" : "none",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 11,
-                color: "#777",
-                textTransform: "uppercase",
-                letterSpacing: 0.5,
-                marginBottom: 4,
-              }}
-            >
-              {m.role}
-              {m.handoff && (
-                <span style={{ marginLeft: 8, color: "#2563eb" }}>
-                  &rarr; handed off to {m.handoff}
-                </span>
-              )}
-            </div>
-            {m.toolCalls && m.toolCalls.length > 0 && (
-              <div style={{ margin: "6px 0" }}>
-                {m.toolCalls.map((tc, j) => (
-                  <ToolCallCard key={j} name={tc.name} args={tc.args} result={tc.result} />
-                ))}
-              </div>
-            )}
-            <div style={{ fontSize: 14, lineHeight: 1.55 }}>
-              {m.role === "assistant" ? (
-                m.content === "" && streaming && i === messages.length - 1 ? (
-                  <span style={{ color: "#888", fontStyle: "italic" }}>
-                    thinking<span className="dots">...</span>
-                  </span>
-                ) : (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
-                )
-              ) : (
-                <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
-              )}
-            </div>
-            {m.citations && m.citations.length > 0 && <CitationList citations={m.citations} />}
-          </div>
-        ))}
+
+        <div className="max-w-3xl mx-auto space-y-5">
+          {messages.map((m, i) => (
+            <MessageBubble
+              key={i}
+              message={m}
+              isLast={i === messages.length - 1}
+              streaming={streaming && i === messages.length - 1}
+            />
+          ))}
+        </div>
       </div>
 
+      {/* Error */}
       {error && (
-        <div style={{ color: "#c00", fontSize: 13, marginTop: 8 }}>error: {error}</div>
+        <div className="mx-6 mb-2 px-4 py-2 text-[13px] text-error bg-error/10 border border-error/30 rounded-md">
+          {error}
+        </div>
       )}
 
-      <form onSubmit={send} style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={streaming ? "streaming..." : "message..."}
-          disabled={streaming}
-          style={{
-            flex: 1,
-            padding: "8px 10px",
-            border: "1px solid #ccc",
-            borderRadius: 4,
-            fontSize: 14,
-          }}
-        />
-        <button
-          type="submit"
-          disabled={streaming || !input.trim()}
-          style={{
-            padding: "8px 14px",
-            border: "1px solid #333",
-            background: streaming ? "#eee" : "#111",
-            color: streaming ? "#777" : "#fff",
-            borderRadius: 4,
-            cursor: streaming ? "not-allowed" : "pointer",
-          }}
-        >
-          Send
-        </button>
-      </form>
-
-      <div
-        style={{
-          marginTop: 10,
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 6,
-        }}
-      >
-        {EXAMPLE_PROMPTS.map((p) => (
+      {/* Input */}
+      <form onSubmit={send} className="px-6 py-4 border-t border-border bg-bg-elevated/40">
+        <div className="max-w-3xl mx-auto flex gap-2 items-center">
+          <input
+            id="chat-input"
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={streaming ? "streaming reply..." : hasJwt ? "Ask the supervisor..." : "Load a demo session to start"}
+            disabled={streaming || !hasJwt}
+            className="flex-1 px-4 py-2.5 bg-bg-input border border-border focus:border-accent/60 focus:outline-none rounded-lg text-[14px] placeholder:text-text-dim disabled:opacity-50"
+          />
           <button
-            key={p}
-            onClick={() => fillPrompt(p)}
-            disabled={streaming}
-            style={{
-              padding: "4px 10px",
-              fontSize: 12,
-              background: "#f3f4f6",
-              border: "1px solid #d1d5db",
-              borderRadius: 999,
-              cursor: streaming ? "not-allowed" : "pointer",
-              color: "#374151",
-            }}
+            type="submit"
+            disabled={streaming || !input.trim() || !hasJwt}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-accent/90 hover:bg-accent text-bg text-[13px] font-medium transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {p.length > 48 ? p.slice(0, 46) + "..." : p}
+            <Zap size={14} />
+            Send
           </button>
-        ))}
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function MessageBubble({ message, isLast, streaming }: { message: Message; isLast: boolean; streaming: boolean }) {
+  const isUser = message.role === "user";
+  const borderColor = agentColorVar(message.handoff);
+
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[75%] rounded-xl rounded-tr-sm bg-bg-input border border-border px-4 py-2.5 text-[14px] whitespace-pre-wrap leading-relaxed">
+          {message.content}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-3">
+      <div className="w-7 h-7 shrink-0 rounded-md border flex items-center justify-center font-mono text-[10px] font-bold uppercase mt-0.5"
+        style={{ borderColor, color: borderColor, background: `color-mix(in oklch, ${borderColor} 10%, transparent)` }}>
+        {(message.handoff ?? "sup").slice(0, 3)}
+      </div>
+      <div className="flex-1 min-w-0 space-y-2">
+        {message.handoff && (
+          <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
+            <span>supervisor</span>
+            <ArrowRight size={12} className="handoff-arrow" style={{ color: borderColor }} />
+            <span className="font-mono" style={{ color: borderColor }}>{message.handoff}</span>
+          </div>
+        )}
+        {message.toolCalls && message.toolCalls.length > 0 && (
+          <div className="space-y-1.5">
+            {message.toolCalls.map((tc, j) => (
+              <ToolCallCard key={j} name={tc.name} args={tc.args} result={tc.result} color={borderColor} />
+            ))}
+          </div>
+        )}
+        <div
+          className="rounded-xl rounded-tl-sm border px-4 py-3 bg-bg-elevated"
+          style={{ borderColor: `color-mix(in oklch, ${borderColor} 30%, var(--color-border))` }}
+        >
+          {message.content === "" && streaming ? (
+            <div className="text-text-muted text-[13px] flex items-center gap-2">
+              <span>thinking</span>
+              <span className="caret" style={{ color: borderColor }} />
+            </div>
+          ) : (
+            <div className="prose-chat text-[14px]">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+              {streaming && isLast && <span className="caret" style={{ color: borderColor }} />}
+            </div>
+          )}
+        </div>
+        {message.citations && message.citations.length > 0 && (
+          <CitationList citations={message.citations} />
+        )}
+        {message.latencyMs && (
+          <div className="flex items-center gap-2 text-[10.5px] text-text-dim">
+            <span className="px-1.5 py-0.5 bg-bg-input rounded font-mono">
+              {(message.latencyMs / 1000).toFixed(2)}s
+            </span>
+            {message.costUsd !== undefined && (
+              <span className="px-1.5 py-0.5 bg-bg-input rounded font-mono">
+                ${message.costUsd.toFixed(4)}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

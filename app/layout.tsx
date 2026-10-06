@@ -1,16 +1,15 @@
-// Minimal root layout. Next 15 App Router requires a root layout to build.
-// Day-1 scaffold did not ship one; added here so the chat UI can render.
+import "./globals.css";
 
 export const metadata = {
   title: "Enterprise Assistant Reference",
-  description: "Reference impl for Agents SDK + Responses API. Not a product.",
+  description: "Multi-agent reference impl: Agents SDK + Responses API + Postgres RLS.",
   icons: { icon: "/favicon.svg" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body style={{ margin: 0, fontFamily: "system-ui, sans-serif" }}>{children}</body>
+    <html lang="en" className="dark">
+      <body className="antialiased">{children}</body>
     </html>
   );
 }

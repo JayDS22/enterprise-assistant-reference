@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: oklch(0.14 0.01 240);
+  --color-bg-elevated: oklch(0.17 0.01 240);
+  --color-bg-input: oklch(0.19 0.01 240);
+  --color-border: oklch(0.26 0.01 240);
+  --color-border-strong: oklch(0.35 0.01 240);
+  --color-text: oklch(0.95 0.005 240);
+  --color-text-muted: oklch(0.65 0.01 240);
+  --color-text-dim: oklch(0.45 0.01 240);
+
+  --color-agent-supervisor: oklch(0.72 0.17 220);
+  --color-agent-billing: oklch(0.75 0.18 50);
+  --color-agent-tickets: oklch(0.72 0.17 155);
+  --color-agent-kb: oklch(0.72 0.17 310);
+  --color-user: oklch(0.6 0.01 240);
+
+  --color-accent: oklch(0.75 0.17 220);
+  --color-success: oklch(0.72 0.17 155);
+  --color-warn: oklch(0.78 0.15 85);
+  --color-error: oklch(0.68 0.19 25);
+}
+
+html, body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  min-height: 100vh;
+}
+
+/* Streaming caret */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+.caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  background: currentColor;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  animation: blink 1s step-end infinite;
+}
+
+/* Handoff pulse */
+@keyframes pulse-x {
+  0%, 100% { transform: translateX(0); opacity: 0.6; }
+  50% { transform: translateX(4px); opacity: 1; }
+}
+.handoff-arrow {
+  animation: pulse-x 1.4s ease-in-out infinite;
+}
+
+/* Markdown prose scoped to assistant bubbles */
+.prose-chat h1, .prose-chat h2, .prose-chat h3 {
+  font-weight: 600;
+  margin: 0.6em 0 0.3em;
+}
+.prose-chat p { margin: 0.4em 0; }
+.prose-chat ul, .prose-chat ol { margin: 0.4em 0; padding-left: 1.4em; }
+.prose-chat li { margin: 0.15em 0; }
+.prose-chat code {
+  background: var(--color-bg-input);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-size: 0.88em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.prose-chat pre {
+  background: var(--color-bg-input);
+  padding: 10px 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 0.85em;
+  margin: 0.6em 0;
+}
+.prose-chat pre code { background: transparent; padding: 0; }
+.prose-chat strong { font-weight: 600; }
+.prose-chat a { color: var(--color-accent); text-decoration: underline; }
+.prose-chat table { border-collapse: collapse; margin: 0.6em 0; font-size: 0.9em; }
+.prose-chat th, .prose-chat td { border: 1px solid var(--color-border); padding: 6px 10px; }
+
+/* Reduce the look of scrollbars in dark theme */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--color-bg); }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-border-strong); }

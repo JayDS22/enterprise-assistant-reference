@@ -1,20 +1,24 @@
-// Server component. Renders a small citation list under an assistant message.
-// Links point at /docs/[docId] which 404s for now — the shape is what matters.
+import { BookOpen } from "lucide-react";
 
 type Citation = { docId: string; title: string; score: number };
 
 export default function CitationList({ citations }: { citations: Citation[] }) {
   if (citations.length === 0) return null;
   return (
-    <ul style={{ fontSize: 12, color: "#555", margin: "6px 0 0 20px", padding: 0 }}>
-      {citations.map((c) => (
-        <li key={c.docId} style={{ margin: "2px 0" }}>
-          <a href={`/docs/${c.docId}`} style={{ color: "#06c" }}>
+    <div className="flex items-start gap-2 text-[11px] text-text-muted pl-1">
+      <BookOpen size={12} className="mt-0.5 shrink-0" />
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {citations.map((c) => (
+          <a
+            key={c.docId}
+            href={`/docs/${c.docId}`}
+            className="hover:text-text underline underline-offset-2 decoration-text-dim/40"
+          >
             {c.title}
+            <span className="text-text-dim ml-1">· {c.score.toFixed(2)}</span>
           </a>
-          <span style={{ color: "#999" }}> &nbsp;({c.score.toFixed(2)})</span>
-        </li>
-      ))}
-    </ul>
+        ))}
+      </div>
+    </div>
   );
 }
