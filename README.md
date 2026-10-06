@@ -18,9 +18,24 @@ make eval             # 12-scenario eval harness; writes scorecard.md
 
 Not written yet. See `_handoff/project-1-FINAL-plan.md` §7 for the day-by-day deliverables.
 
+## Measured latency (local, 2026-10-06)
+
+Serial curl probe against a live dev stack (Next 15 + local Postgres + hosted OpenAI gpt-4o-2024-11-20), 10 samples, warm:
+
+| Metric | Value |
+|---|---|
+| min | 0.839s |
+| p50 | 1.475s |
+| p95 | 8.187s |
+| max | 8.187s |
+
+p95 is driven by supervisor-handoff cycles (two chat completions per request on the handoff path). Not production-grade. Honest signal of what the reference impl delivers out-of-the-box.
+
+k6 numbers under concurrency are the next measurement — `scripts/k6_latency.js` is ready to run, k6 install is a user action.
+
 ## Known trade-offs
 
-- **Live demo first request takes ~15s cold.** Neon free-tier auto-suspends after 5 min idle. Steady-state p95 is targeted at 820ms; see `scripts/k6_latency.js` for the measurement.
+- **Live demo first request takes ~15s cold** when deployed on Neon free tier (auto-suspends after 5 min idle). The local-dev number above is warm-state.
 - **This is a reference impl, not a product.** 500 docs, 10k customers, single region. Scaling notes in `docs/ARCHITECTURE.md`.
 - **LLM-judge calibrated on 20-row gold sets per judged scenario.** Statistically directional, not definitive. See `docs/EVALS.md`.
 - **Zod validates request shapes; SQL safety comes from `pg` parameterized queries, not from Zod.** Confusing the two is a common eval-literacy fail; we call it out explicitly.

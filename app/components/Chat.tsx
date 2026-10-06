@@ -139,7 +139,7 @@ export default function Chat(_: Props) {
           <div style={{ color: "#999", fontSize: 13 }}>No messages yet.</div>
         )}
         {messages.map((m, i) => (
-          <div key={i} style={{ margin: "10px 0" }}>
+          <div key={i} data-role={m.role} style={{ margin: "10px 0" }}>
             <div style={{ fontSize: 11, color: "#777", textTransform: "uppercase" }}>
               {m.role}
             </div>

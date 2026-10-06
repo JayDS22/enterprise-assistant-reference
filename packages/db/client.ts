@@ -11,11 +11,16 @@ const pool = new Pool({
  * Every tool and route handler MUST route DB access through this wrapper.
  *
  * Pattern per FINAL plan §4:
- *   BEGIN; SET LOCAL app.tenant_id = $1; <work>; COMMIT
+ *   BEGIN; set_config('app.tenant_id', $1, true); <work>; COMMIT
  *
- * SET LOCAL is scoped to the transaction, so no leak across pool checkouts.
+ * `set_config(..., true)` is the parameterizable equivalent of SET LOCAL,
+ * scoped to the current transaction. SET LOCAL does not accept bind
+ * parameters (Postgres SQL syntax restriction); see INCIDENTS.md #5.
+ *
  * A bare `pool.query` outside this wrapper is a bug; db.withTenant.spec.ts
  * includes a bypass-detection test that fails if the pattern is omitted.
+ * The app MUST connect as a non-superuser role (ear_app) because superusers
+ * bypass even FORCE ROW LEVEL SECURITY; see INCIDENTS.md #6.
  */
 export async function withTenant<T>(
   tenantId: string,
@@ -25,7 +30,7 @@ export async function withTenant<T>(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SET LOCAL app.tenant_id = $1", [tenantId]);
+    await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
     const result = await fn(client);
     await client.query("COMMIT");
     return result;
