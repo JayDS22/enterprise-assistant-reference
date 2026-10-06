@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { createHash } from "node:crypto";
 import { checkAndConsume } from "@/lib/rate_limit";
 import { piiInputGuard } from "../../../src/guardrails/pii_input";
-import { runSupervisor } from "../../../src/agents/supervisor";
+import { runSupervisor, estimateCostUsd } from "../../../src/agents/supervisor";
 import { withTenant } from "@/db/client";
 
 // SSE chat route. Spec placed this at app/(chat)/route.ts but that collides with
@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
   let replyContent: string;
   let supervisorToolCalls: Array<{ name: string; args: unknown }> = [];
   let supervisorHandoff: string | undefined;
+  let supervisorCost: number | undefined;
   try {
     const out = await runSupervisor({
       tenantId,
@@ -79,6 +80,11 @@ export async function POST(req: NextRequest) {
     replyContent = out.reply;
     supervisorToolCalls = out.tool_calls.map((t) => ({ name: t.name, args: t.args }));
     supervisorHandoff = out.handoff;
+    supervisorCost = estimateCostUsd(
+      process.env.OPENAI_RESPONSES_MODEL ?? "gpt-4o-2024-11-20",
+      out.usage.input_tokens,
+      out.usage.output_tokens,
+    );
   } catch (err) {
     const msg = (err as Error).message ?? "";
     if (msg.includes("not implemented")) {
@@ -125,7 +131,9 @@ export async function POST(req: NextRequest) {
         ),
       );
       controller.enqueue(
-        encoder.encode(sseFrame({ role: "assistant", content: replyContent })),
+        encoder.encode(
+          sseFrame({ role: "assistant", content: replyContent, costUsd: supervisorCost }),
+        ),
       );
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();

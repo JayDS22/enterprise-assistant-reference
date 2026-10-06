@@ -20,6 +20,8 @@ type Message = {
   costUsd?: number;
 };
 
+type SsePayload = Partial<Message> & { costUsd?: number };
+
 const JWT_KEY = "jwt_token";
 
 function decodeJwtPayload(token: string): { tenant_id?: string; sub?: string; exp?: number } | null {
@@ -147,13 +149,14 @@ export default function Chat() {
           const json = line.slice(5).trim();
           if (!json || json === "[DONE]") continue;
           try {
-            const payload = JSON.parse(json) as Partial<Message>;
+            const payload = JSON.parse(json) as SsePayload;
             assistant = {
               role: "assistant",
               content: (assistant.content ?? "") + (payload.content ?? ""),
               toolCalls: payload.toolCalls ?? assistant.toolCalls,
               citations: payload.citations ?? assistant.citations,
               handoff: payload.handoff ?? assistant.handoff,
+              costUsd: payload.costUsd ?? assistant.costUsd,
             };
             setMessages((prev) => {
               const copy = prev.slice();
@@ -169,7 +172,8 @@ export default function Chat() {
       const latencyMs = Math.round(performance.now() - t0);
       setMessages((prev) => {
         const copy = prev.slice();
-        copy[copy.length - 1] = { ...copy[copy.length - 1]!, latencyMs };
+        const last = copy[copy.length - 1]!;
+        copy[copy.length - 1] = { ...last, latencyMs, costUsd: assistant.costUsd ?? last.costUsd };
         return copy;
       });
     } catch (err) {
@@ -295,7 +299,7 @@ function MessageBubble({ message, isLast, streaming }: { message: Message; isLas
 
   if (isUser) {
     return (
-      <div className="flex justify-end">
+      <div data-role="user" className="flex justify-end">
         <div className="max-w-[75%] rounded-xl rounded-tr-sm bg-bg-input border border-border px-4 py-2.5 text-[14px] whitespace-pre-wrap leading-relaxed">
           {message.content}
         </div>
@@ -304,7 +308,7 @@ function MessageBubble({ message, isLast, streaming }: { message: Message; isLas
   }
 
   return (
-    <div className="flex gap-3">
+    <div data-role="assistant" className="flex gap-3">
       <div className="w-7 h-7 shrink-0 rounded-md border flex items-center justify-center font-mono text-[10px] font-bold uppercase mt-0.5"
         style={{ borderColor, color: borderColor, background: `color-mix(in oklch, ${borderColor} 10%, transparent)` }}>
         {(message.handoff ?? "sup").slice(0, 3)}

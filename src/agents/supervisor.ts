@@ -15,7 +15,21 @@ export type SupervisorOutput = {
   reply: string;
   handoff?: "billing" | "tickets" | "kb" | "human";
   tool_calls: Array<{ name: string; args: unknown; result_hash: string }>;
+  usage: { input_tokens: number; output_tokens: number; requests: number };
 };
+
+// Pinned pricing per 1M tokens. Keep aligned with
+// scripts/pricing.py in the sibling evals pack if that model is used.
+const PRICING: Record<string, { in: number; out: number }> = {
+  "gpt-4o-2024-11-20": { in: 2.5, out: 10.0 },
+  "gpt-4o-2024-08-06": { in: 2.5, out: 10.0 },
+  "gpt-4o-mini": { in: 0.15, out: 0.6 },
+};
+
+export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
+  const p = PRICING[model] ?? PRICING["gpt-4o-2024-11-20"]!;
+  return (inputTokens * p.in + outputTokens * p.out) / 1_000_000;
+}
 
 const supervisorAgent = new Agent<AppRunContext>({
   name: "supervisor",
@@ -61,5 +75,23 @@ export async function runSupervisor(input: SupervisorInput): Promise<SupervisorO
   const handoffTarget =
     lastAgent === "supervisor" ? undefined : (lastAgent as SupervisorOutput["handoff"]);
 
-  return { reply, handoff: handoffTarget, tool_calls: toolCalls };
+  // Aggregate token usage across every raw model response in the run (supervisor
+  // call + any sub-agent calls + any tool-emission turns).
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let requests = 0;
+  for (const r of result.rawResponses ?? []) {
+    const u = r.usage;
+    if (!u) continue;
+    inputTokens += u.inputTokens ?? 0;
+    outputTokens += u.outputTokens ?? 0;
+    requests += u.requests ?? 1;
+  }
+
+  return {
+    reply,
+    handoff: handoffTarget,
+    tool_calls: toolCalls,
+    usage: { input_tokens: inputTokens, output_tokens: outputTokens, requests },
+  };
 }
