@@ -157,6 +157,28 @@ Postmortems from bugs hit during the build. Format per FINAL plan §9: TL;DR, Ti
 
 ---
 
+## 10. OTel file exporter crashed every Fly machine on boot
+
+**TL;DR.** The adversarial-pass fix for "OTel is never initialized" wired `instrumentation.ts` + `FileSpanExporter` into the server boot. On Fly, the container runs as the non-root `nextjs` user (per Dockerfile hardening) and does not own `/app`. `mkdirSync('/app/.otel')` threw `EACCES` inside `FileSpanExporter`'s constructor during Next 15's instrumentation hook, which propagated to the server bootstrap and killed the process. Both machines went to `stopped` + `1 warning`. Root `/` returned 503 after 55s on the next request.
+
+**Timeline.** Pushed the 5-item parallel fix. `pnpm typecheck + test + build` all green locally. CI deploy succeeded. First live probe returned 503. `flyctl logs` showed a tight loop of:
+```
+Error: EACCES: permission denied, mkdir '/app/.otel'
+    at new FileSpanExporter
+    at Module.initTelemetry
+    at NextNodeServer.runInstrumentationHookIfAvailable
+```
+
+**Root cause.** The exporter did `mkdirSync(dirname(this.filePath), { recursive: true })` in its constructor and let the error propagate. Dev didn't catch it because the local workspace is user-owned and `./.otel` is writable. The `Dockerfile`'s `USER nextjs` directive (set during the first container build days ago) made `/app` effectively read-only.
+
+**Fix.** `FileSpanExporter` catches `EACCES` on mkdir, logs a warning, and leaves `#stream = null`. `export()` and `shutdown()` short-circuit when `#stream` is null. Console exporter still runs, so traces are not lost — just not persisted to disk until the operator sets `OTEL_FILE_EXPORTER_PATH` to a writable dir like `/tmp/otel/traces.jsonl`.
+
+**What changed.** `src/otel/setup.ts` is now fail-soft on exporter init. The error message tells the operator exactly how to re-enable disk persistence. No new test (the behavior is container-permission-dependent; test fixture would be stub-driven and not catch the real cause). CI deploy immediately after the fix recovered to 200/350ms root + 5.7s chat round-trip.
+
+**Lesson.** Any boot-time filesystem operation inside a hardened container runs against a non-root user with a locked-down FS. Fail-soft at construction, fail-loud in logs, is the right default for optional-persistence exporters.
+
+---
+
 ## Not written up (yet)
 
 Prospective incidents from the FINAL plan §9 that haven't actually happened:
