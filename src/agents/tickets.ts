@@ -2,20 +2,16 @@ import { Agent, tool } from "@openai/agents";
 import { SearchTicketsArgs, CreateTicketArgs } from "@/schemas/tools";
 import { search_tickets } from "../tools/search_tickets";
 import { create_ticket } from "../tools/create_ticket";
+import { requireCtx, type AppRunContext } from "./common";
 
-export type AppRunContext = { tenantId: string; userId: string };
-
-function requireCtx(ctx: { context: AppRunContext } | undefined): AppRunContext {
-  if (!ctx) throw new Error("tickets: RunContext missing (tenantId/userId required)");
-  return ctx.context;
-}
+export type { AppRunContext };
 
 const searchTool = tool<typeof SearchTicketsArgs, AppRunContext>({
   name: "search_tickets",
   description: "List tickets, optionally filtered by status, newest first.",
   parameters: SearchTicketsArgs,
   execute: async (input, runContext) => {
-    const { tenantId, userId } = requireCtx(runContext);
+    const { tenantId, userId } = requireCtx(runContext, "tickets");
     return search_tickets(tenantId, userId, input);
   },
 });
@@ -26,7 +22,7 @@ const createTool = tool<typeof CreateTicketArgs, AppRunContext>({
     "Open a new support ticket. Caller must supply a stable idempotency_key so retries do not create duplicates.",
   parameters: CreateTicketArgs,
   execute: async (input, runContext) => {
-    const { tenantId, userId } = requireCtx(runContext);
+    const { tenantId, userId } = requireCtx(runContext, "tickets");
     return create_ticket(tenantId, userId, input);
   },
 });

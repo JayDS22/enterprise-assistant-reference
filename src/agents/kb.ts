@@ -1,13 +1,9 @@
 import { Agent, tool } from "@openai/agents";
 import { SearchKnowledgeBaseArgs } from "@/schemas/tools";
 import { search_knowledge_base } from "../tools/search_knowledge_base";
+import { requireCtx, type AppRunContext } from "./common";
 
-export type AppRunContext = { tenantId: string; userId: string };
-
-function requireCtx(ctx: { context: AppRunContext } | undefined): AppRunContext {
-  if (!ctx) throw new Error("kb: RunContext missing (tenantId/userId required)");
-  return ctx.context;
-}
+export type { AppRunContext };
 
 const kbTool = tool<typeof SearchKnowledgeBaseArgs, AppRunContext>({
   name: "search_knowledge_base",
@@ -15,7 +11,7 @@ const kbTool = tool<typeof SearchKnowledgeBaseArgs, AppRunContext>({
     "Search internal policy and documentation. Returns hits with id, title, snippet, and score.",
   parameters: SearchKnowledgeBaseArgs,
   execute: async (input, runContext) => {
-    const { tenantId, userId } = requireCtx(runContext);
+    const { tenantId, userId } = requireCtx(runContext, "kb");
     return search_knowledge_base(tenantId, userId, input);
   },
 });

@@ -15,6 +15,11 @@ const KBHit = z.object({
 });
 
 const SNIPPET_LEN = 240;
+// Null-safe default + hard cap on top_k. Same reason as search_tickets:
+// Structured Outputs schema requires every field present, so top_k can be
+// null. LIMIT NULL is unbounded in Postgres.
+const DEFAULT_TOP_K = 5;
+const MAX_TOP_K = 20;
 
 export async function search_knowledge_base(
   tenantId: string,
@@ -22,6 +27,7 @@ export async function search_knowledge_base(
   input: z.infer<typeof SearchKnowledgeBaseArgs>,
 ) {
   const args = SearchKnowledgeBaseArgs.parse(input);
+  const topK = Math.min(args.top_k ?? DEFAULT_TOP_K, MAX_TOP_K);
   return withTenant(tenantId, async (tx) => {
     const populated = await tx.query(
       "SELECT COUNT(*)::int AS n FROM docs WHERE embedding IS NOT NULL LIMIT 1",
@@ -50,7 +56,7 @@ export async function search_knowledge_base(
                LIMIT 1
             ) ASC
             LIMIT $3`,
-          [SNIPPET_LEN, like, args.top_k],
+          [SNIPPET_LEN, like, topK],
         )
       : await tx.query(
           `SELECT id, title, substring(body FROM 1 FOR $1) AS body_snippet,
@@ -59,7 +65,7 @@ export async function search_knowledge_base(
             WHERE title ILIKE $2 OR body ILIKE $2
             ORDER BY (CASE WHEN title ILIKE $2 THEN 0 ELSE 1 END), id
             LIMIT $3`,
-          [SNIPPET_LEN, like, args.top_k],
+          [SNIPPET_LEN, like, topK],
         );
 
     await tx.query(

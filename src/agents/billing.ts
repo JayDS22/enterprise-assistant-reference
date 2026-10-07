@@ -1,15 +1,9 @@
 import { Agent, tool } from "@openai/agents";
 import { GetSubscriptionStatusArgs } from "@/schemas/tools";
 import { get_subscription_status } from "../tools/get_subscription_status";
+import { requireCtx, type AppRunContext } from "./common";
 
-// RunContext payload for every sub-agent. tenantId + userId are plumbed from
-// the SSE route handler into Runner.run(..., { context: { tenantId, userId } }).
-export type AppRunContext = { tenantId: string; userId: string };
-
-function requireCtx(ctx: { context: AppRunContext } | undefined): AppRunContext {
-  if (!ctx) throw new Error("billing: RunContext missing (tenantId/userId required)");
-  return ctx.context;
-}
+export type { AppRunContext };
 
 const subscriptionTool = tool<typeof GetSubscriptionStatusArgs, AppRunContext>({
   name: "get_subscription_status",
@@ -17,7 +11,7 @@ const subscriptionTool = tool<typeof GetSubscriptionStatusArgs, AppRunContext>({
     "Fetch the active subscription for a customer: plan, status, next renewal date.",
   parameters: GetSubscriptionStatusArgs,
   execute: async (input, runContext) => {
-    const { tenantId, userId } = requireCtx(runContext);
+    const { tenantId, userId } = requireCtx(runContext, "billing");
     return get_subscription_status(tenantId, userId, input);
   },
 });
